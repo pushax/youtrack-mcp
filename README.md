@@ -60,7 +60,23 @@ go build -o youtrack-mcp .
 }
 ```
 
-**Claude Code** — `.claude/settings.json` in your project, or `~/.claude/settings.json` globally:
+**Claude Code (global)** — `~/.claude/.claude.json` (the exact path depends on your Claude Code installation; check where your other MCP servers are configured):
+
+```json
+{
+  "mcpServers": {
+    "youtrack": {
+      "command": "/path/to/youtrack-mcp",
+      "env": {
+        "YOUTRACK_URL": "https://youtrack.example.com",
+        "YOUTRACK_TOKEN": "perm:xxxxxxxx"
+      }
+    }
+  }
+}
+```
+
+**Claude Code (project-level)** — `.claude/settings.json` in the project root (safe to commit, keeps token out via env):
 
 ```json
 {

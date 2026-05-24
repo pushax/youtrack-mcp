@@ -429,60 +429,47 @@ func (c *YouTrackClient) CreateArticle(ctx context.Context, projectID, title, co
 // ---- Merge Requests (VCS) ----
 
 type MergeRequest struct {
-	ID      string
-	Title   string
-	URL     string
-	Author  string
-	State   string
-	Created time.Time
+	ID    string
+	Title string
+	URL   string
+	State string
 }
 
-type ytVcsChange struct {
-	Type   string `json:"$type"`
+type ytGitLabMR struct {
 	ID     string `json:"id"`
-	Text   string `json:"text"`
+	Title  string `json:"title"`
+	Branch string `json:"branch"`
 	URL    string `json:"url"`
-	Author struct {
-		Name  string `json:"name"`
-		Login string `json:"login"`
-	} `json:"author"`
-	Date  int64  `json:"date"`
-	State string `json:"state"`
+	State  struct {
+		Name string `json:"name"`
+	} `json:"state"`
+}
+
+type ytGitLabMRResponse struct {
+	PullRequests []ytGitLabMR `json:"pullRequests"`
 }
 
 func (c *YouTrackClient) GetIssueMergeRequests(ctx context.Context, issueID string) ([]MergeRequest, error) {
 	params := url.Values{}
-	params.Set("fields", "$type,id,text,url,author(name,login),date,state")
+	params.Set("issueId", issueID)
 
-	body, err := c.get(ctx, "/issues/"+url.PathEscape(issueID)+"/vcsChanges", params)
+	body, err := c.get(ctx, "/extensionEndpoints/fh-gitlab-widget/backend/pullRequests", params)
 	if err != nil {
 		return nil, err
 	}
 
-	var raw []ytVcsChange
+	var raw ytGitLabMRResponse
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("parse error: %w", err)
 	}
 
-	var mrs []MergeRequest
-	for _, r := range raw {
-		typeLower := strings.ToLower(r.Type)
-		if !strings.Contains(typeLower, "pullrequest") && !strings.Contains(typeLower, "mergerequest") {
-			continue
-		}
-
-		author := r.Author.Name
-		if author == "" {
-			author = r.Author.Login
-		}
-
+	mrs := make([]MergeRequest, 0, len(raw.PullRequests))
+	for _, r := range raw.PullRequests {
 		mrs = append(mrs, MergeRequest{
-			ID:      r.ID,
-			Title:   r.Text,
-			URL:     r.URL,
-			Author:  author,
-			State:   r.State,
-			Created: time.UnixMilli(r.Date),
+			ID:    r.ID,
+			Title: r.Title,
+			URL:   r.URL,
+			State: r.State.Name,
 		})
 	}
 

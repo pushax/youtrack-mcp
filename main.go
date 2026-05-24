@@ -415,12 +415,6 @@ func main() {
 				if mr.State != "" {
 					result += fmt.Sprintf("**State:** %s\n", mr.State)
 				}
-				if mr.Author != "" {
-					result += fmt.Sprintf("**Author:** %s\n", mr.Author)
-				}
-				if !mr.Created.IsZero() {
-					result += fmt.Sprintf("**Created:** %s\n", mr.Created.Format("2006-01-02 15:04"))
-				}
 				if mr.URL != "" {
 					result += fmt.Sprintf("**URL:** %s\n", mr.URL)
 				}
