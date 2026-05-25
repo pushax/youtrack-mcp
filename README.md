@@ -9,7 +9,7 @@ MCP server for YouTrack REST API. Provides tools for reading and managing issues
 | `get_issue_with_docs` | **Main.** Fetch an issue and all linked KB articles from its description |
 | `get_issue` | Get an issue by ID |
 | `get_issue_comments` | Get all comments on an issue |
-| `get_issue_mrs` | Get merge requests linked to an issue (via VCS integration) |
+| `get_issue_mrs` | Get merge requests linked to an issue (requires GitLab plugin) |
 | `add_comment` | Add a comment to an issue |
 | `update_issue` | Update an issue via YouTrack command syntax |
 | `create_issue` | Create a new issue in a project |
@@ -26,13 +26,14 @@ MCP server for YouTrack REST API. Provides tools for reading and managing issues
 |----------|----------|-------------|
 | `YOUTRACK_URL` | Yes | Base URL of your YouTrack instance, e.g. `https://youtrack.example.com` |
 | `YOUTRACK_TOKEN` | Yes | Personal permanent token |
+| `YOUTRACK_GITLAB_PLUGIN` | No | Extension endpoint name for the GitLab integration plugin. Required for `get_issue_mrs`. Find it in your YouTrack URL: `/api/extensionEndpoints/<name>/backend/pullRequests` |
 | `YOUTRACK_MCP_ADDR` | No | If set, starts in SSE/HTTP mode instead of stdio, e.g. `localhost:8080` |
 
 ## Auth token
 
 YouTrack → your profile → **Hub** → **Auth tokens** → Create personal token.
 
-Minimum scopes: `Read Issue`, `Read Article`, `Read VCS Integration` (for MR list).
+Minimum scopes: `Read Issue`, `Read Article`. The `get_issue_mrs` tool uses a GitLab plugin extension endpoint — no special scope needed, but the plugin must be installed in your YouTrack instance.
 
 ## Connection options
 

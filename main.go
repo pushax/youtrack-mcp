@@ -18,7 +18,7 @@ func main() {
 		log.Fatal("YOUTRACK_URL and YOUTRACK_TOKEN must be set")
 	}
 
-	client := NewYouTrackClient(baseURL, token)
+	client := NewYouTrackClient(baseURL, token, os.Getenv("YOUTRACK_GITLAB_PLUGIN"))
 
 	s := server.NewMCPServer(
 		"youtrack-mcp",
@@ -402,6 +402,9 @@ func main() {
 
 			mrs, err := client.GetIssueMergeRequests(ctx, issueID)
 			if err != nil {
+				if err == ErrMRPluginUnavailable {
+					return mcp.NewToolResultText("GitLab plugin is not configured in this YouTrack instance. Set YOUTRACK_GITLAB_PLUGIN to the correct plugin name."), nil
+				}
 				return mcp.NewToolResultError(fmt.Sprintf("failed to get merge requests: %v", err)), nil
 			}
 

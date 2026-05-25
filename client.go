@@ -12,15 +12,17 @@ import (
 )
 
 type YouTrackClient struct {
-	baseURL    string
-	token      string
-	httpClient *http.Client
+	baseURL      string
+	token        string
+	gitlabPlugin string
+	httpClient   *http.Client
 }
 
-func NewYouTrackClient(baseURL, token string) *YouTrackClient {
+func NewYouTrackClient(baseURL, token, gitlabPlugin string) *YouTrackClient {
 	return &YouTrackClient{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		token:   token,
+		baseURL:      strings.TrimRight(baseURL, "/"),
+		token:        token,
+		gitlabPlugin: gitlabPlugin,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -449,12 +451,22 @@ type ytGitLabMRResponse struct {
 	PullRequests []ytGitLabMR `json:"pullRequests"`
 }
 
+var ErrMRPluginUnavailable = fmt.Errorf("GitLab plugin not available")
+
 func (c *YouTrackClient) GetIssueMergeRequests(ctx context.Context, issueID string) ([]MergeRequest, error) {
+	if c.gitlabPlugin == "" {
+		return nil, ErrMRPluginUnavailable
+	}
+
 	params := url.Values{}
 	params.Set("issueId", issueID)
 
-	body, err := c.get(ctx, "/extensionEndpoints/fh-gitlab-widget/backend/pullRequests", params)
+	path := "/extensionEndpoints/" + c.gitlabPlugin + "/backend/pullRequests"
+	body, err := c.get(ctx, path, params)
 	if err != nil {
+		if strings.Contains(err.Error(), "HTTP 404") || strings.Contains(err.Error(), "HTTP 400") {
+			return nil, ErrMRPluginUnavailable
+		}
 		return nil, err
 	}
 
