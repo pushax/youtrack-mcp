@@ -4,21 +4,27 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
+	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
 
-func main() {
-	baseURL := os.Getenv("YOUTRACK_URL")
-	token := os.Getenv("YOUTRACK_TOKEN")
+type Config struct {
+	URL          string `env:"YOUTRACK_URL"           env-required:"true"`
+	Token        string `env:"YOUTRACK_TOKEN"         env-required:"true"`
+	GitlabPlugin string `env:"YOUTRACK_GITLAB_PLUGIN"`
+	MCPAddr      string `env:"YOUTRACK_MCP_ADDR"`
+	Debug        bool   `env:"YOUTRACK_DEBUG"`
+}
 
-	if baseURL == "" || token == "" {
-		log.Fatal("YOUTRACK_URL and YOUTRACK_TOKEN must be set")
+func main() {
+	var cfg Config
+	if err := cleanenv.ReadEnv(&cfg); err != nil {
+		log.Fatalf("config error: %v", err)
 	}
 
-	client := NewYouTrackClient(baseURL, token, os.Getenv("YOUTRACK_GITLAB_PLUGIN"))
+	client := NewYouTrackClient(cfg.URL, cfg.Token, cfg.GitlabPlugin, cfg.Debug)
 
 	s := server.NewMCPServer(
 		"youtrack-mcp",
@@ -65,7 +71,7 @@ func main() {
 				return mcp.NewToolResultError("article_id is required"), nil
 			}
 
-			articleID = extractArticleID(articleID, baseURL)
+			articleID = extractArticleID(articleID, cfg.URL)
 
 			article, err := client.GetArticle(ctx, articleID)
 			if err != nil {
@@ -99,7 +105,7 @@ func main() {
 
 			result := issue.Format()
 
-			articleIDs := extractArticleLinks(issue.Description, baseURL)
+			articleIDs := extractArticleLinks(issue.Description, cfg.URL)
 			if len(articleIDs) == 0 {
 				result += "\n\n---\n_No linked Knowledge Base articles found in description._"
 				return mcp.NewToolResultText(result), nil
@@ -460,10 +466,10 @@ func main() {
 		},
 	)
 
-	if addr := os.Getenv("YOUTRACK_MCP_ADDR"); addr != "" {
-		log.Printf("Starting YouTrack MCP server (SSE) on %s...", addr)
-		sse := server.NewSSEServer(s, server.WithBaseURL("http://"+addr))
-		if err := sse.Start(addr); err != nil {
+	if cfg.MCPAddr != "" {
+		log.Printf("Starting YouTrack MCP server (SSE) on %s...", cfg.MCPAddr)
+		sse := server.NewSSEServer(s, server.WithBaseURL("http://"+cfg.MCPAddr))
+		if err := sse.Start(cfg.MCPAddr); err != nil {
 			log.Fatalf("Server error: %v", err)
 		}
 	} else {

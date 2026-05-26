@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,14 +16,16 @@ type YouTrackClient struct {
 	baseURL      string
 	token        string
 	gitlabPlugin string
+	debug        bool
 	httpClient   *http.Client
 }
 
-func NewYouTrackClient(baseURL, token, gitlabPlugin string) *YouTrackClient {
+func NewYouTrackClient(baseURL, token, gitlabPlugin string, debug bool) *YouTrackClient {
 	return &YouTrackClient{
 		baseURL:      strings.TrimRight(baseURL, "/"),
 		token:        token,
 		gitlabPlugin: gitlabPlugin,
+		debug:        debug,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -33,6 +36,10 @@ func (c *YouTrackClient) get(ctx context.Context, path string, params url.Values
 	reqURL := c.baseURL + "/api" + path
 	if len(params) > 0 {
 		reqURL += "?" + params.Encode()
+	}
+
+	if c.debug {
+		log.Printf("[DEBUG] GET %s", reqURL)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "GET", reqURL, nil)
@@ -52,6 +59,10 @@ func (c *YouTrackClient) get(ctx context.Context, path string, params url.Values
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+
+	if c.debug {
+		log.Printf("[DEBUG] %s → %d: %s", reqURL, resp.StatusCode, string(body))
 	}
 
 	if resp.StatusCode != http.StatusOK {
