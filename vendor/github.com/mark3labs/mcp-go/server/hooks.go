@@ -11,16 +11,29 @@ import (
 // OnRegisterSessionHookFunc is a hook that will be called when a new session is registered.
 type OnRegisterSessionHookFunc func(ctx context.Context, session ClientSession)
 
+// OnUnregisterSessionHookFunc is a hook that will be called when a session is being unregistered.
+type OnUnregisterSessionHookFunc func(ctx context.Context, session ClientSession)
+
 // BeforeAnyHookFunc is a function that is called after the request is
 // parsed but before the method is called.
+//
+// See the Hooks type-level documentation for the pairing contract between
+// OnBeforeAny, OnSuccess, and OnError.
 type BeforeAnyHookFunc func(ctx context.Context, id any, method mcp.MCPMethod, message any)
 
 // OnSuccessHookFunc is a hook that will be called after the request
 // successfully generates a result, but before the result is sent to the client.
+//
+// See the Hooks type-level documentation for the pairing contract between
+// OnBeforeAny, OnSuccess, and OnError.
 type OnSuccessHookFunc func(ctx context.Context, id any, method mcp.MCPMethod, message any, result any)
 
 // OnErrorHookFunc is a hook that will be called when an error occurs,
 // either during the request parsing or the method execution.
+//
+// See the Hooks type-level documentation for the pairing contract between
+// OnBeforeAny, OnSuccess, and OnError, including the cases in which OnError
+// may fire without a prior OnBeforeAny.
 //
 // Example usage:
 // ```
@@ -33,7 +46,7 @@ type OnSuccessHookFunc func(ctx context.Context, id any, method mcp.MCPMethod, m
 //	  }
 //
 //	  // Use errors.As to get specific error types
-//	  var parseErr = &UnparseableMessageError{}
+//	  var parseErr = &UnparsableMessageError{}
 //	  if errors.As(err, &parseErr) {
 //	    // Access specific methods/fields of the error type
 //	    log.Printf("Failed to parse message for method %s: %v",
@@ -54,11 +67,18 @@ type OnSuccessHookFunc func(ctx context.Context, id any, method mcp.MCPMethod, m
 //	})
 type OnErrorHookFunc func(ctx context.Context, id any, method mcp.MCPMethod, message any, err error)
 
+// OnRequestInitializationFunc is a function that called before handle diff request method
+// Should any errors arise during func execution, the service will promptly return the corresponding error message.
+type OnRequestInitializationFunc func(ctx context.Context, id any, message any) error
+
 type OnBeforeInitializeFunc func(ctx context.Context, id any, message *mcp.InitializeRequest)
 type OnAfterInitializeFunc func(ctx context.Context, id any, message *mcp.InitializeRequest, result *mcp.InitializeResult)
 
 type OnBeforePingFunc func(ctx context.Context, id any, message *mcp.PingRequest)
 type OnAfterPingFunc func(ctx context.Context, id any, message *mcp.PingRequest, result *mcp.EmptyResult)
+
+type OnBeforeSetLevelFunc func(ctx context.Context, id any, message *mcp.SetLevelRequest)
+type OnAfterSetLevelFunc func(ctx context.Context, id any, message *mcp.SetLevelRequest, result *mcp.EmptyResult)
 
 type OnBeforeListResourcesFunc func(ctx context.Context, id any, message *mcp.ListResourcesRequest)
 type OnAfterListResourcesFunc func(ctx context.Context, id any, message *mcp.ListResourcesRequest, result *mcp.ListResourcesResult)
@@ -68,6 +88,12 @@ type OnAfterListResourceTemplatesFunc func(ctx context.Context, id any, message 
 
 type OnBeforeReadResourceFunc func(ctx context.Context, id any, message *mcp.ReadResourceRequest)
 type OnAfterReadResourceFunc func(ctx context.Context, id any, message *mcp.ReadResourceRequest, result *mcp.ReadResourceResult)
+
+type OnBeforeSubscribeFunc func(ctx context.Context, id any, message *mcp.SubscribeRequest)
+type OnAfterSubscribeFunc func(ctx context.Context, id any, message *mcp.SubscribeRequest, result *mcp.EmptyResult)
+
+type OnBeforeUnsubscribeFunc func(ctx context.Context, id any, message *mcp.UnsubscribeRequest)
+type OnAfterUnsubscribeFunc func(ctx context.Context, id any, message *mcp.UnsubscribeRequest, result *mcp.EmptyResult)
 
 type OnBeforeListPromptsFunc func(ctx context.Context, id any, message *mcp.ListPromptsRequest)
 type OnAfterListPromptsFunc func(ctx context.Context, id any, message *mcp.ListPromptsRequest, result *mcp.ListPromptsResult)
@@ -79,23 +105,80 @@ type OnBeforeListToolsFunc func(ctx context.Context, id any, message *mcp.ListTo
 type OnAfterListToolsFunc func(ctx context.Context, id any, message *mcp.ListToolsRequest, result *mcp.ListToolsResult)
 
 type OnBeforeCallToolFunc func(ctx context.Context, id any, message *mcp.CallToolRequest)
-type OnAfterCallToolFunc func(ctx context.Context, id any, message *mcp.CallToolRequest, result *mcp.CallToolResult)
+type OnAfterCallToolFunc func(ctx context.Context, id any, message *mcp.CallToolRequest, result any)
 
+type OnBeforeGetTaskFunc func(ctx context.Context, id any, message *mcp.GetTaskRequest)
+type OnAfterGetTaskFunc func(ctx context.Context, id any, message *mcp.GetTaskRequest, result *mcp.GetTaskResult)
+
+type OnBeforeListTasksFunc func(ctx context.Context, id any, message *mcp.ListTasksRequest)
+type OnAfterListTasksFunc func(ctx context.Context, id any, message *mcp.ListTasksRequest, result *mcp.ListTasksResult)
+
+type OnBeforeTaskResultFunc func(ctx context.Context, id any, message *mcp.TaskResultRequest)
+type OnAfterTaskResultFunc func(ctx context.Context, id any, message *mcp.TaskResultRequest, result *mcp.TaskResultResult)
+
+type OnBeforeCancelTaskFunc func(ctx context.Context, id any, message *mcp.CancelTaskRequest)
+type OnAfterCancelTaskFunc func(ctx context.Context, id any, message *mcp.CancelTaskRequest, result *mcp.CancelTaskResult)
+
+type OnBeforeCompleteFunc func(ctx context.Context, id any, message *mcp.CompleteRequest)
+type OnAfterCompleteFunc func(ctx context.Context, id any, message *mcp.CompleteRequest, result *mcp.CompleteResult)
+
+// Hooks is the registry of callbacks that fire around request handling.
+//
+// # Pairing contract
+//
+// For every invocation of OnBeforeAny for a given request id, exactly one of
+// OnSuccess or OnError will fire for the same id before the request handler
+// returns to the JSON-RPC dispatcher. This makes the OnBeforeAny / OnSuccess /
+// OnError trio safe to use as the building block for per-request bookkeeping
+// such as latency histograms, distributed tracing spans, or slow-request
+// logging.
+//
+// Two caveats apply:
+//
+//  1. OnError may fire without a prior OnBeforeAny when the dispatcher rejects
+//     a request before invoking the per-method handler. This happens for
+//     payload-parse failures (UnparsableMessageError) and capability-not-
+//     enabled errors (ErrUnsupported). Per-request bookkeeping consumers must
+//     therefore tolerate "id not found" on the OnError path; the natural
+//     sync.Map.LoadAndDelete ok-bool already covers this.
+//
+//  2. If a handler panics and neither WithRecovery nor WithResourceRecovery
+//     is installed at server construction, the panic unwinds past the
+//     dispatcher and skips both OnSuccess and OnError. OnBeforeAny will
+//     already have fired. The process is typically terminating in that case,
+//     so the leak is moot in practice; bookkeeping consumers that need to
+//     survive unrecovered panics should either install the recovery
+//     middleware or run a periodic sweeper. With recovery middleware
+//     installed, panics are converted to errors and the contract above
+//     holds.
+//
+// Hooks fire synchronously in the request goroutine, in the order they were
+// registered with the corresponding Add* method. A long-running hook will
+// delay the response to the client; offload heavy work to a separate
+// goroutine if needed.
 type Hooks struct {
 	OnRegisterSession             []OnRegisterSessionHookFunc
+	OnUnregisterSession           []OnUnregisterSessionHookFunc
 	OnBeforeAny                   []BeforeAnyHookFunc
 	OnSuccess                     []OnSuccessHookFunc
 	OnError                       []OnErrorHookFunc
+	OnRequestInitialization       []OnRequestInitializationFunc
 	OnBeforeInitialize            []OnBeforeInitializeFunc
 	OnAfterInitialize             []OnAfterInitializeFunc
 	OnBeforePing                  []OnBeforePingFunc
 	OnAfterPing                   []OnAfterPingFunc
+	OnBeforeSetLevel              []OnBeforeSetLevelFunc
+	OnAfterSetLevel               []OnAfterSetLevelFunc
 	OnBeforeListResources         []OnBeforeListResourcesFunc
 	OnAfterListResources          []OnAfterListResourcesFunc
 	OnBeforeListResourceTemplates []OnBeforeListResourceTemplatesFunc
 	OnAfterListResourceTemplates  []OnAfterListResourceTemplatesFunc
 	OnBeforeReadResource          []OnBeforeReadResourceFunc
 	OnAfterReadResource           []OnAfterReadResourceFunc
+	OnBeforeSubscribe             []OnBeforeSubscribeFunc
+	OnAfterSubscribe              []OnAfterSubscribeFunc
+	OnBeforeUnsubscribe           []OnBeforeUnsubscribeFunc
+	OnAfterUnsubscribe            []OnAfterUnsubscribeFunc
 	OnBeforeListPrompts           []OnBeforeListPromptsFunc
 	OnAfterListPrompts            []OnAfterListPromptsFunc
 	OnBeforeGetPrompt             []OnBeforeGetPromptFunc
@@ -104,6 +187,16 @@ type Hooks struct {
 	OnAfterListTools              []OnAfterListToolsFunc
 	OnBeforeCallTool              []OnBeforeCallToolFunc
 	OnAfterCallTool               []OnAfterCallToolFunc
+	OnBeforeGetTask               []OnBeforeGetTaskFunc
+	OnAfterGetTask                []OnAfterGetTaskFunc
+	OnBeforeListTasks             []OnBeforeListTasksFunc
+	OnAfterListTasks              []OnAfterListTasksFunc
+	OnBeforeTaskResult            []OnBeforeTaskResultFunc
+	OnAfterTaskResult             []OnAfterTaskResultFunc
+	OnBeforeCancelTask            []OnBeforeCancelTaskFunc
+	OnAfterCancelTask             []OnAfterCancelTaskFunc
+	OnBeforeComplete              []OnBeforeCompleteFunc
+	OnAfterComplete               []OnAfterCompleteFunc
 }
 
 func (c *Hooks) AddBeforeAny(hook BeforeAnyHookFunc) {
@@ -135,9 +228,9 @@ func (c *Hooks) AddOnSuccess(hook OnSuccessHookFunc) {
 //	    }
 //
 //	    // For parsing errors
-//	    var parseErr = &UnparseableMessageError{}
+//	    var parseErr = &UnparsableMessageError{}
 //	    if errors.As(err, &parseErr) {
-//	        // Handle unparseable message errors
+//	        // Handle unparsable message errors
 //	        fmt.Printf("Failed to parse %s request: %v\n",
 //	                   parseErr.GetMethod(), parseErr.Unwrap())
 //	        errChan <- parseErr
@@ -191,7 +284,7 @@ func (c *Hooks) onSuccess(ctx context.Context, id any, method mcp.MCPMethod, mes
 //
 // Common error types include:
 // - ErrUnsupported: When a capability is not enabled
-// - UnparseableMessageError: When request parsing fails
+// - UnparsableMessageError: When request parsing fails
 // - ErrResourceNotFound: When a resource is not found
 // - ErrPromptNotFound: When a prompt is not found
 // - ErrToolNotFound: When a tool is not found
@@ -215,6 +308,36 @@ func (c *Hooks) RegisterSession(ctx context.Context, session ClientSession) {
 	for _, hook := range c.OnRegisterSession {
 		hook(ctx, session)
 	}
+}
+
+func (c *Hooks) AddOnUnregisterSession(hook OnUnregisterSessionHookFunc) {
+	c.OnUnregisterSession = append(c.OnUnregisterSession, hook)
+}
+
+func (c *Hooks) UnregisterSession(ctx context.Context, session ClientSession) {
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnUnregisterSession {
+		hook(ctx, session)
+	}
+}
+
+func (c *Hooks) AddOnRequestInitialization(hook OnRequestInitializationFunc) {
+	c.OnRequestInitialization = append(c.OnRequestInitialization, hook)
+}
+
+func (c *Hooks) onRequestInitialization(ctx context.Context, id any, message any) error {
+	if c == nil {
+		return nil
+	}
+	for _, hook := range c.OnRequestInitialization {
+		err := hook(ctx, id, message)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 func (c *Hooks) AddBeforeInitialize(hook OnBeforeInitializeFunc) {
 	c.OnBeforeInitialize = append(c.OnBeforeInitialize, hook)
@@ -267,6 +390,33 @@ func (c *Hooks) afterPing(ctx context.Context, id any, message *mcp.PingRequest,
 		return
 	}
 	for _, hook := range c.OnAfterPing {
+		hook(ctx, id, message, result)
+	}
+}
+func (c *Hooks) AddBeforeSetLevel(hook OnBeforeSetLevelFunc) {
+	c.OnBeforeSetLevel = append(c.OnBeforeSetLevel, hook)
+}
+
+func (c *Hooks) AddAfterSetLevel(hook OnAfterSetLevelFunc) {
+	c.OnAfterSetLevel = append(c.OnAfterSetLevel, hook)
+}
+
+func (c *Hooks) beforeSetLevel(ctx context.Context, id any, message *mcp.SetLevelRequest) {
+	c.beforeAny(ctx, id, mcp.MethodSetLogLevel, message)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnBeforeSetLevel {
+		hook(ctx, id, message)
+	}
+}
+
+func (c *Hooks) afterSetLevel(ctx context.Context, id any, message *mcp.SetLevelRequest, result *mcp.EmptyResult) {
+	c.onSuccess(ctx, id, mcp.MethodSetLogLevel, message, result)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnAfterSetLevel {
 		hook(ctx, id, message, result)
 	}
 }
@@ -348,6 +498,60 @@ func (c *Hooks) afterReadResource(ctx context.Context, id any, message *mcp.Read
 		return
 	}
 	for _, hook := range c.OnAfterReadResource {
+		hook(ctx, id, message, result)
+	}
+}
+func (c *Hooks) AddBeforeSubscribe(hook OnBeforeSubscribeFunc) {
+	c.OnBeforeSubscribe = append(c.OnBeforeSubscribe, hook)
+}
+
+func (c *Hooks) AddAfterSubscribe(hook OnAfterSubscribeFunc) {
+	c.OnAfterSubscribe = append(c.OnAfterSubscribe, hook)
+}
+
+func (c *Hooks) beforeSubscribe(ctx context.Context, id any, message *mcp.SubscribeRequest) {
+	c.beforeAny(ctx, id, mcp.MethodResourcesSubscribe, message)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnBeforeSubscribe {
+		hook(ctx, id, message)
+	}
+}
+
+func (c *Hooks) afterSubscribe(ctx context.Context, id any, message *mcp.SubscribeRequest, result *mcp.EmptyResult) {
+	c.onSuccess(ctx, id, mcp.MethodResourcesSubscribe, message, result)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnAfterSubscribe {
+		hook(ctx, id, message, result)
+	}
+}
+func (c *Hooks) AddBeforeUnsubscribe(hook OnBeforeUnsubscribeFunc) {
+	c.OnBeforeUnsubscribe = append(c.OnBeforeUnsubscribe, hook)
+}
+
+func (c *Hooks) AddAfterUnsubscribe(hook OnAfterUnsubscribeFunc) {
+	c.OnAfterUnsubscribe = append(c.OnAfterUnsubscribe, hook)
+}
+
+func (c *Hooks) beforeUnsubscribe(ctx context.Context, id any, message *mcp.UnsubscribeRequest) {
+	c.beforeAny(ctx, id, mcp.MethodResourcesUnsubscribe, message)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnBeforeUnsubscribe {
+		hook(ctx, id, message)
+	}
+}
+
+func (c *Hooks) afterUnsubscribe(ctx context.Context, id any, message *mcp.UnsubscribeRequest, result *mcp.EmptyResult) {
+	c.onSuccess(ctx, id, mcp.MethodResourcesUnsubscribe, message, result)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnAfterUnsubscribe {
 		hook(ctx, id, message, result)
 	}
 }
@@ -450,12 +654,147 @@ func (c *Hooks) beforeCallTool(ctx context.Context, id any, message *mcp.CallToo
 	}
 }
 
-func (c *Hooks) afterCallTool(ctx context.Context, id any, message *mcp.CallToolRequest, result *mcp.CallToolResult) {
+func (c *Hooks) afterCallTool(ctx context.Context, id any, message *mcp.CallToolRequest, result any) {
 	c.onSuccess(ctx, id, mcp.MethodToolsCall, message, result)
 	if c == nil {
 		return
 	}
 	for _, hook := range c.OnAfterCallTool {
+		hook(ctx, id, message, result)
+	}
+}
+func (c *Hooks) AddBeforeGetTask(hook OnBeforeGetTaskFunc) {
+	c.OnBeforeGetTask = append(c.OnBeforeGetTask, hook)
+}
+
+func (c *Hooks) AddAfterGetTask(hook OnAfterGetTaskFunc) {
+	c.OnAfterGetTask = append(c.OnAfterGetTask, hook)
+}
+
+func (c *Hooks) beforeGetTask(ctx context.Context, id any, message *mcp.GetTaskRequest) {
+	c.beforeAny(ctx, id, mcp.MethodTasksGet, message)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnBeforeGetTask {
+		hook(ctx, id, message)
+	}
+}
+
+func (c *Hooks) afterGetTask(ctx context.Context, id any, message *mcp.GetTaskRequest, result *mcp.GetTaskResult) {
+	c.onSuccess(ctx, id, mcp.MethodTasksGet, message, result)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnAfterGetTask {
+		hook(ctx, id, message, result)
+	}
+}
+func (c *Hooks) AddBeforeListTasks(hook OnBeforeListTasksFunc) {
+	c.OnBeforeListTasks = append(c.OnBeforeListTasks, hook)
+}
+
+func (c *Hooks) AddAfterListTasks(hook OnAfterListTasksFunc) {
+	c.OnAfterListTasks = append(c.OnAfterListTasks, hook)
+}
+
+func (c *Hooks) beforeListTasks(ctx context.Context, id any, message *mcp.ListTasksRequest) {
+	c.beforeAny(ctx, id, mcp.MethodTasksList, message)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnBeforeListTasks {
+		hook(ctx, id, message)
+	}
+}
+
+func (c *Hooks) afterListTasks(ctx context.Context, id any, message *mcp.ListTasksRequest, result *mcp.ListTasksResult) {
+	c.onSuccess(ctx, id, mcp.MethodTasksList, message, result)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnAfterListTasks {
+		hook(ctx, id, message, result)
+	}
+}
+func (c *Hooks) AddBeforeTaskResult(hook OnBeforeTaskResultFunc) {
+	c.OnBeforeTaskResult = append(c.OnBeforeTaskResult, hook)
+}
+
+func (c *Hooks) AddAfterTaskResult(hook OnAfterTaskResultFunc) {
+	c.OnAfterTaskResult = append(c.OnAfterTaskResult, hook)
+}
+
+func (c *Hooks) beforeTaskResult(ctx context.Context, id any, message *mcp.TaskResultRequest) {
+	c.beforeAny(ctx, id, mcp.MethodTasksResult, message)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnBeforeTaskResult {
+		hook(ctx, id, message)
+	}
+}
+
+func (c *Hooks) afterTaskResult(ctx context.Context, id any, message *mcp.TaskResultRequest, result *mcp.TaskResultResult) {
+	c.onSuccess(ctx, id, mcp.MethodTasksResult, message, result)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnAfterTaskResult {
+		hook(ctx, id, message, result)
+	}
+}
+func (c *Hooks) AddBeforeCancelTask(hook OnBeforeCancelTaskFunc) {
+	c.OnBeforeCancelTask = append(c.OnBeforeCancelTask, hook)
+}
+
+func (c *Hooks) AddAfterCancelTask(hook OnAfterCancelTaskFunc) {
+	c.OnAfterCancelTask = append(c.OnAfterCancelTask, hook)
+}
+
+func (c *Hooks) beforeCancelTask(ctx context.Context, id any, message *mcp.CancelTaskRequest) {
+	c.beforeAny(ctx, id, mcp.MethodTasksCancel, message)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnBeforeCancelTask {
+		hook(ctx, id, message)
+	}
+}
+
+func (c *Hooks) afterCancelTask(ctx context.Context, id any, message *mcp.CancelTaskRequest, result *mcp.CancelTaskResult) {
+	c.onSuccess(ctx, id, mcp.MethodTasksCancel, message, result)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnAfterCancelTask {
+		hook(ctx, id, message, result)
+	}
+}
+func (c *Hooks) AddBeforeComplete(hook OnBeforeCompleteFunc) {
+	c.OnBeforeComplete = append(c.OnBeforeComplete, hook)
+}
+
+func (c *Hooks) AddAfterComplete(hook OnAfterCompleteFunc) {
+	c.OnAfterComplete = append(c.OnAfterComplete, hook)
+}
+
+func (c *Hooks) beforeComplete(ctx context.Context, id any, message *mcp.CompleteRequest) {
+	c.beforeAny(ctx, id, mcp.MethodCompletionComplete, message)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnBeforeComplete {
+		hook(ctx, id, message)
+	}
+}
+
+func (c *Hooks) afterComplete(ctx context.Context, id any, message *mcp.CompleteRequest, result *mcp.CompleteResult) {
+	c.onSuccess(ctx, id, mcp.MethodCompletionComplete, message, result)
+	if c == nil {
+		return
+	}
+	for _, hook := range c.OnAfterComplete {
 		hook(ctx, id, message, result)
 	}
 }

@@ -121,9 +121,9 @@ docker build -t youtrack-mcp .
 
 ---
 
-### 3. HTTP / SSE — TCP (network mode)
+### 3. HTTP (Streamable HTTP — TCP)
 
-Set `YOUTRACK_MCP_ADDR` to start an SSE server instead of stdio. Useful for shared deployments or when you can't run a local binary.
+Set `YOUTRACK_MCP_ADDR` to start an HTTP server instead of stdio. This is the recommended remote transport (SSE is deprecated).
 
 **Run the server:**
 
@@ -150,7 +150,8 @@ docker run -p 8080:8080 \
 {
   "mcpServers": {
     "youtrack": {
-      "url": "http://localhost:8080/sse"
+      "type": "http",
+      "url": "http://localhost:8080/mcp"
     }
   }
 }

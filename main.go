@@ -42,9 +42,9 @@ func main() {
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			issueID, ok := req.Params.Arguments["issue_id"].(string)
-			if !ok || issueID == "" {
-				return mcp.NewToolResultError("issue_id is required"), nil
+			issueID, err := req.RequireString("issue_id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
 			issue, err := client.GetIssue(ctx, issueID)
@@ -66,9 +66,9 @@ func main() {
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			articleID, ok := req.Params.Arguments["article_id"].(string)
-			if !ok || articleID == "" {
-				return mcp.NewToolResultError("article_id is required"), nil
+			articleID, err := req.RequireString("article_id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
 			articleID = extractArticleID(articleID, cfg.URL)
@@ -93,9 +93,9 @@ func main() {
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			issueID, ok := req.Params.Arguments["issue_id"].(string)
-			if !ok || issueID == "" {
-				return mcp.NewToolResultError("issue_id is required"), nil
+			issueID, err := req.RequireString("issue_id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
 			issue, err := client.GetIssue(ctx, issueID)
@@ -139,15 +139,12 @@ func main() {
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			query, ok := req.Params.Arguments["query"].(string)
-			if !ok || query == "" {
-				return mcp.NewToolResultError("query is required"), nil
+			query, err := req.RequireString("query")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			limit := 20
-			if l, ok := req.Params.Arguments["limit"].(float64); ok && l > 0 {
-				limit = int(l)
-			}
+			limit := req.GetInt("limit", 20)
 
 			issues, err := client.SearchIssues(ctx, query, limit)
 			if err != nil {
@@ -177,9 +174,9 @@ func main() {
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			issueID, ok := req.Params.Arguments["issue_id"].(string)
-			if !ok || issueID == "" {
-				return mcp.NewToolResultError("issue_id is required"), nil
+			issueID, err := req.RequireString("issue_id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
 			comments, err := client.GetIssueComments(ctx, issueID)
@@ -214,10 +211,13 @@ func main() {
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			issueID, _ := req.Params.Arguments["issue_id"].(string)
-			text, _ := req.Params.Arguments["text"].(string)
-			if issueID == "" || text == "" {
-				return mcp.NewToolResultError("issue_id and text are required"), nil
+			issueID, err := req.RequireString("issue_id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			text, err := req.RequireString("text")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
 			if err := client.AddComment(ctx, issueID, text); err != nil {
@@ -241,10 +241,13 @@ func main() {
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			issueID, _ := req.Params.Arguments["issue_id"].(string)
-			command, _ := req.Params.Arguments["command"].(string)
-			if issueID == "" || command == "" {
-				return mcp.NewToolResultError("issue_id and command are required"), nil
+			issueID, err := req.RequireString("issue_id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			command, err := req.RequireString("command")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
 			if err := client.UpdateIssue(ctx, issueID, command); err != nil {
@@ -271,13 +274,15 @@ func main() {
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			projectID, _ := req.Params.Arguments["project_id"].(string)
-			summary, _ := req.Params.Arguments["summary"].(string)
-			description, _ := req.Params.Arguments["description"].(string)
-
-			if projectID == "" || summary == "" {
-				return mcp.NewToolResultError("project_id and summary are required"), nil
+			projectID, err := req.RequireString("project_id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
+			summary, err := req.RequireString("summary")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			description := req.GetString("description", "")
 
 			issue, err := client.CreateIssue(ctx, projectID, summary, description)
 			if err != nil {
@@ -300,15 +305,12 @@ func main() {
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			projectID, _ := req.Params.Arguments["project_id"].(string)
-			if projectID == "" {
-				return mcp.NewToolResultError("project_id is required"), nil
+			projectID, err := req.RequireString("project_id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
-			limit := 20
-			if l, ok := req.Params.Arguments["limit"].(float64); ok && l > 0 {
-				limit = int(l)
-			}
+			limit := req.GetInt("limit", 20)
 
 			issues, err := client.ListProjectIssues(ctx, projectID, limit)
 			if err != nil {
@@ -336,7 +338,7 @@ func main() {
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			projectID, _ := req.Params.Arguments["project_id"].(string)
+			projectID := req.GetString("project_id", "")
 
 			articles, err := client.ListArticles(ctx, projectID)
 			if err != nil {
@@ -369,9 +371,9 @@ func main() {
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			query, _ := req.Params.Arguments["query"].(string)
-			if query == "" {
-				return mcp.NewToolResultError("query is required"), nil
+			query, err := req.RequireString("query")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
 			articles, err := client.SearchArticles(ctx, query)
@@ -401,9 +403,9 @@ func main() {
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			issueID, ok := req.Params.Arguments["issue_id"].(string)
-			if !ok || issueID == "" {
-				return mcp.NewToolResultError("issue_id is required"), nil
+			issueID, err := req.RequireString("issue_id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
 
 			mrs, err := client.GetIssueMergeRequests(ctx, issueID)
@@ -450,13 +452,15 @@ func main() {
 			),
 		),
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			projectID, _ := req.Params.Arguments["project_id"].(string)
-			title, _ := req.Params.Arguments["title"].(string)
-			content, _ := req.Params.Arguments["content"].(string)
-
-			if projectID == "" || title == "" {
-				return mcp.NewToolResultError("project_id and title are required"), nil
+			projectID, err := req.RequireString("project_id")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
 			}
+			title, err := req.RequireString("title")
+			if err != nil {
+				return mcp.NewToolResultError(err.Error()), nil
+			}
+			content := req.GetString("content", "")
 
 			article, err := client.CreateArticle(ctx, projectID, title, content)
 			if err != nil {
@@ -467,9 +471,9 @@ func main() {
 	)
 
 	if cfg.MCPAddr != "" {
-		log.Printf("Starting YouTrack MCP server (SSE) on %s...", cfg.MCPAddr)
-		sse := server.NewSSEServer(s, server.WithBaseURL("http://"+cfg.MCPAddr))
-		if err := sse.Start(cfg.MCPAddr); err != nil {
+		log.Printf("Starting YouTrack MCP server (HTTP) on %s...", cfg.MCPAddr)
+		h := server.NewStreamableHTTPServer(s)
+		if err := h.Start(cfg.MCPAddr); err != nil {
 			log.Fatalf("Server error: %v", err)
 		}
 	} else {
